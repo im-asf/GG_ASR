@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#121212" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <title>Live Transliterator</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background-color: #121212;
+      color: #ffffff;
+      height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      padding: 14px;
+      gap: 10px;
+    }
+    .top-bar {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    select {
+      flex: 1;
+      background: #242424;
+      color: #fff;
+      border: 1px solid #3d3d3d;
+      border-radius: 10px;
+      padding: 12px;
+      font-size: 16px;
+      outline: none;
+    }
+    .icon-btn {
+      background: #242424;
+      color: #fff;
+      border: 1px solid #3d3d3d;
+      border-radius: 10px;
+      padding: 12px 14px;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    .icon-btn:active { background: #383838; }
+    #status {
+      font-size: 14px;
+      color: #a5d6a7;
+      padding: 2px 4px;
+    }
+    #caption-box {
+      flex: 1;
+      background: #1a1a1a;
+      border: 1px solid #2c2c2c;
+      border-radius: 12px;
+      padding: 16px;
+      overflow-y: auto;
+      line-height: 1.45;
+      font-size: 26px;
+      word-wrap: break-word;
+    }
+    #final-text { color: #ffffff; white-space: pre-wrap; }
+    #interim-text { color: #90caf9; }
+    .bottom-bar {
+      display: flex;
+      gap: 10px;
+    }
+    .btn {
+      border: none;
+      border-radius: 12px;
+      padding: 16px;
+      font-size: 17px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    #clear-btn {
+      background: #2c2c2c;
+      color: #e0e0e0;
+      flex: 0.35;
+    }
+    #listen-btn {
+      background: #1e88e5;
+      color: #ffffff;
+      flex: 1;
+    }
+    #listen-btn.active {
+      background: #e53935;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="top-bar">
+    <select id="lang-select">
+      <option value="ne-NP" data-mode="NEPALI">Nepali (Romanized)</option>
+      <option value="hi-IN" data-mode="HINDI">Hindi (Romanized)</option>
+      <option value="en-IN" data-mode="ENGLISH">English</option>
+      <option value="bn-IN" data-mode="OTHER">Bengali (Native)</option>
+    </select>
+    <button class="icon-btn" id="font-down" title="Smaller text">A-</button>
+    <button class="icon-btn" id="font-up" title="Larger text">A+</button>
+  </div>
+
+  <div id="status">Status: Ready (Tap Start Listening)</div>
+
+  <div id="caption-box">
+    <span id="final-text"></span><span id="interim-text"></span>
+  </div>
+
+  <div class="bottom-bar">
+    <button class="btn" id="clear-btn">Clear</button>
+    <button class="btn" id="listen-btn">Start Listening</button>
+  </div>
+
+  <script>
+    // --- 1. Offline Devanagari-to-Roman Transliterator ---
+    const nepaliOverrides = {
+      "तपाईं": "tapai", "तपाई": "tapai", "हुन्छ": "hunchha",
+      "छैन": "chhaina", "गर्नुहोस्": "garnuhos", "के": "ke", "र": "ra",
+      "कस्तो": "kasto", "छ": "chha", "म": "ma", "तिमी": "timi"
+    };
+
+    const hindiOverrides = {
+      "मैं": "main", "हैं": "hain", "है": "hai", "नहीं": "nahi",
+      "कैसे": "kaise", "क्या": "kya", "और": "aur", "आप": "aap", "हूँ": "hoon"
+    };
+
+    const vowels = {
+      'अ': 'a', 'आ': 'aa', 'इ': 'i', 'ई': 'i',
+      'उ': 'u', 'ऊ': 'u', 'ऋ': 'ri', 'ए': 'e',
+      'ऐ': 'ai', 'ओ': 'o', 'औ': 'au'
+    };
+
+    const matras = {
+      'ा': 'a', 'ि': 'i', 'ी': 'i', 'ु': 'u', 'ू': 'u',
+      'ृ': 'ri', 'े': 'e', 'ै': 'ai', 'ो': 'o', 'ौ': 'au'
+    };
+
+    const consonants = {
+      'क': 'k', 'ख': 'kh', 'ग': 'g', 'घ': 'gh', 'ङ': 'ng',
+      'च': 'ch', 'छ': 'chh', 'ज': 'j', 'झ': 'jh', 'ञ': 'ny',
+      'ट': 't', 'ठ': 'th', 'ड': 'd', 'ढ': 'dh', 'ण': 'n',
+      'त': 't', 'थ': 'th', 'द': 'd', 'ध': 'dh', 'न': 'n',
+      'प': 'p', 'फ': 'ph', 'ब': 'b', 'भ': 'bh', 'म': 'm',
+      'य': 'y', 'र': 'r', 'ल': 'l', 'व': 'w',
+      'श': 'sh', 'ष': 'sh', 'स': 's', 'ह': 'h',
+      '\u095C': 'r', '\u095D': 'rh', '\u095E': 'f', '\u095B': 'z'
+    };
+
+    const HALANT = '्';
+
+    function containsDevanagari(str) {
+      return /[\u0900-\u097F]/.test(str);
+    }
+
+    function transliterateWord(word, mode) {
+      let out = "";
+      const chars = Array.from(word);
+
+      for (let i = 0; i < chars.length; i++) {
+        const c = chars[i];
+        const next = chars[i + 1];
+
+        if (c === 'क' && next === HALANT && chars[i + 2] === 'ष') {
+          out += "ksh";
+          i += 2;
+          if (needsInherentA(chars, i)) out += "a";
+          continue;
+        }
+        if (c === 'ज' && next === HALANT && chars[i + 2] === 'ञ') {
+          out += "gy";
+          i += 2;
+          if (needsInherentA(chars, i)) out += "a";
+          continue;
+        }
+
+        if (vowels[c]) {
+          out += vowels[c];
+        } else if (matras[c]) {
+          out += matras[c];
+        } else if (c === 'ं' || c === 'ँ') {
+          out += "n";
+        } else if (c === 'ः') {
+          out += "h";
+        } else if (c === HALANT) {
+          // Suppress inherent 'a'
+        } else if (consonants[c]) {
+          out += (c === 'व' && mode === 'HINDI') ? 'v' : consonants[c];
+          if (needsInherentA(chars, i)) out += "a";
+        } else {
+          out += c;
+        }
+      }
+      return out;
+    }
+
+    function needsInherentA(chars, index) {
+      const next = chars[index + 1];
+      if (next === HALANT || (next && matras[next])) return false;
+      const isLast = (index === chars.length - 1);
+      const precededByHalant = (index > 0 && chars[index - 1] === HALANT);
+      return !isLast || chars.length === 1 || precededByHalant;
+    }
+
+    function transliterateText(text, mode) {
+      if (mode !== "NEPALI" && mode !== "HINDI") return text;
+      const overrides = (mode === "NEPALI") ? nepaliOverrides : hindiOverrides;
+
+      return text.split(/(\s+)/).map(token => {
+        if (!token.trim() || !containsDevanagari(token)) return token;
+        // Separate trailing punctuation if any
+        const match = token.match(/^([\u0900-\u097F]+)(.*)$/);
+        if (!match) return token;
+        const core = match[1];
+        const punct = match[2] || "";
+        const roman = overrides[core] || transliterateWord(core, mode);
+        return roman + punct;
+      }).join("");
+    }
+
+    // --- 2. Chrome Web Speech API Setup ---
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const statusEl = document.getElementById("status");
+    const finalEl = document.getElementById("final-text");
+    const interimEl = document.getElementById("interim-text");
+    const captionBox = document.getElementById("caption-box");
+    const langSelect = document.getElementById("lang-select");
+    const listenBtn = document.getElementById("listen-btn");
+    const clearBtn = document.getElementById("clear-btn");
+
+    let recognition = null;
+    let isListening = false;
+    let fontSize = 26;
+
+    if (!SpeechRecognition) {
+      statusEl.textContent = "Error: Please open this page in Google Chrome.";
