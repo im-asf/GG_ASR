@@ -1,194 +1,149 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <meta name="theme-color" content="#121212" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Live Transliterator</title>
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background: #121212;
-      color: #ffffff;
-      height: 100dvh;
-      display: flex;
-      flex-direction: column;
-      padding: 14px;
-      gap: 10px;
-    }
-    .top-bar { display: flex; gap: 8px; }
-    select {
-      flex: 1;
-      background: #242424;
-      color: #fff;
-      border: 1px solid #3d3d3d;
-      border-radius: 10px;
-      padding: 12px;
-      font-size: 16px;
-    }
-    .icon-btn {
-      background: #242424;
-      color: #fff;
-      border: 1px solid #3d3d3d;
-      border-radius: 10px;
-      padding: 12px 14px;
-      font-size: 16px;
-      font-weight: bold;
-    }
-    #status { font-size: 14px; color: #a5d6a7; padding: 2px 4px; }
-    #caption-box {
-      flex: 1;
-      background: #1a1a1a;
-      border: 1px solid #2c2c2c;
-      border-radius: 12px;
-      padding: 16px;
-      overflow-y: auto;
-      line-height: 1.45;
-      font-size: 26px;
-      word-wrap: break-word;
-    }
-    #final-text { color: #ffffff; white-space: pre-wrap; }
-    #interim-text { color: #90caf9; }
-    .bottom-bar { display: flex; gap: 10px; }
-    .btn {
-      border: none;
-      border-radius: 12px;
-      padding: 16px;
-      font-size: 17px;
-      font-weight: 600;
-    }
-    #clear-btn { background: #2c2c2c; color: #e0e0e0; flex: 0.35; }
-    #listen-btn { background: #1e88e5; color: #ffffff; flex: 1; }
-    #listen-btn.active { background: #e53935; }
+    body { background: #121212; color: #fff; font-family: sans-serif; padding: 16px; margin: 0; }
+    select, button { padding: 14px; font-size: 18px; border: none; border-radius: 10px; }
+    select { width: 100%; background: #242424; color: #fff; }
+    .row { display: flex; gap: 10px; margin-top: 12px; }
+    #btn { flex: 1; background: #1e88e5; color: #fff; font-weight: bold; }
+    #clearBtn { background: #333; color: #fff; }
+    #status { color: #a5d6a7; margin-top: 12px; font-size: 15px; }
+    #output { margin-top: 12px; font-size: 26px; background: #1e1e1e; padding: 15px; border-radius: 10px; height: 60vh; overflow-y: auto; line-height: 1.4; }
+    #interim { color: #90caf9; }
   </style>
+  <script>
+    window.onerror = function(msg, url, line) {
+      var s = document.getElementById("status");
+      if (s) s.textContent = "JS ERROR line " + line + ": " + msg;
+    };
+  </script>
 </head>
 <body>
+  <select id="lang" onchange="restartIfActive()">
+    <option value="ne-NP">Nepali (Romanized)</option>
+    <option value="hi-IN">Hindi (Romanized)</option>
+    <option value="en-IN">English</option>
+  </select>
 
-  <div class="top-bar">
-    <select id="lang-select" onchange="onLangChange()">
-      <option value="ne-NP" data-mode="NEPALI">Nepali (Romanized)</option>
-      <option value="hi-IN" data-mode="HINDI">Hindi (Romanized)</option>
-      <option value="en-IN" data-mode="ENGLISH">English</option>
-      <option value="bn-IN" data-mode="OTHER">Bengali (Native)</option>
-    </select>
-    <button class="icon-btn" onclick="changeFont(-4)">A-</button>
-    <button class="icon-btn" onclick="changeFont(4)">A+</button>
+  <div class="row">
+    <button id="clearBtn" onclick="clearBox()">Clear</button>
+    <button id="btn" onclick="toggleListen()">Start Listening</button>
   </div>
 
   <div id="status">Status: Ready</div>
-
-  <div id="caption-box">
-    <span id="final-text"></span><span id="interim-text"></span>
-  </div>
-
-  <div class="bottom-bar">
-    <button class="btn" id="clear-btn" onclick="clearText()">Clear</button>
-    <button class="btn" id="listen-btn" onclick="toggleListening()">Start Listening</button>
-  </div>
+  <div id="output"><span id="final"></span><span id="interim"></span></div>
 
   <script>
-    const nepaliOverrides = {
-      "तपाईं": "tapai", "तपाई": "tapai", "हुन्छ": "hunchha",
-      "छैन": "chhaina", "गर्नुहोस्": "garnuhos", "के": "ke", "र": "ra",
-      "कस्तो": "kasto", "छ": "chha", "म": "ma", "तिमी": "timi"
-    };
-    const hindiOverrides = {
-      "मैं": "main", "हैं": "hain", "है": "hai", "नहीं": "nahi",
-      "कैसे": "kaise", "क्या": "kya", "और": "aur", "आप": "aap", "हूँ": "hoon"
-    };
-    const vowels = {
-      'अ':'a','आ':'aa','इ':'i','ई':'i','उ':'u','ऊ':'u','ऋ':'ri','ए':'e','ऐ':'ai','ओ':'o','औ':'au'
-    };
-    const matras = {
-      'ा':'a','ि':'i','ी':'i','ु':'u','ू':'u','ृ':'ri','े':'e','ै':'ai','ो':'o','ौ':'au'
-    };
-    const consonants = {
-      'क':'k','ख':'kh','ग':'g','घ':'gh','ङ':'ng','च':'ch','छ':'chh','ज':'j','झ':'jh','ञ':'ny',
-      'ट':'t','ठ':'th','ड':'d','ढ':'dh','ण':'n','त':'t','थ':'th','द':'d','ध':'dh','न':'n',
-      'प':'p','फ':'ph','ब':'b','भ':'bh','म':'m','य':'y','र':'r','ल':'l','व':'w',
-      'श':'sh','ष':'sh','स':'s','ह':'h','\u095C':'r','\u095D':'rh','\u095E':'f','\u095B':'z'
-    };
-    const HALANT = '्';
+    var rec = null;
+    var listening = false;
 
-    function needsA(chars, i) {
-      const next = chars[i + 1];
-      if (next === HALANT || (next && matras[next])) return false;
-      return (i < chars.length - 1) || chars.length === 1 || (i > 0 && chars[i - 1] === HALANT);
-    }
+    var vMap = {'अ':'a','आ':'aa','इ':'i','ई':'i','उ':'u','ऊ':'u','ऋ':'ri','ए':'e','ऐ':'ai','ओ':'o','औ':'au'};
+    var mMap = {'ा':'a','ि':'i','ी':'i','ु':'u','ू':'u','ृ':'ri','े':'e','ै':'ai','ो':'o','ौ':'au'};
+    var cMap = {'क':'k','ख':'kh','ग':'g','घ':'gh','ङ':'ng','च':'ch','छ':'chh','ज':'j','झ':'jh','ञ':'ny','ट':'t','ठ':'th','ड':'d','ढ':'dh','ण':'n','त':'t','थ':'th','द':'d','ध':'dh','न':'n','प':'p','फ':'ph','ब':'b','भ':'bh','म':'m','य':'y','र':'r','ल':'l','व':'w','श':'sh','ष':'sh','स':'s','ह':'h'};
+    var fix = {'तपाईं':'tapai','तपाई':'tapai','हुन्छ':'hunchha','छैन':'chhaina','कस्तो':'kasto','छ':'chha','मैं':'main','हैं':'hain','है':'hai','नहीं':'nahi','कैसे':'kaise','क्या':'kya'};
 
-    function transliterateWord(word, mode) {
-      let out = "";
-      const chars = Array.from(word);
-      for (let i = 0; i < chars.length; i++) {
-        const c = chars[i], next = chars[i + 1];
-        if (c === 'क' && next === HALANT && chars[i + 2] === 'ष') {
-          out += "ksh"; i += 2; if (needsA(chars, i)) out += "a"; continue;
+    function toRoman(text, lang) {
+      if (lang === "en-IN") return text;
+      return text.split(" ").map(function(w) {
+        if (fix[w]) return fix[w];
+        var out = "", chars = Array.from(w);
+        for (var i = 0; i < chars.length; i++) {
+          var c = chars[i], n = chars[i + 1];
+          if (vMap[c]) out += vMap[c];
+          else if (mMap[c]) out += mMap[c];
+          else if (c === 'ं' || c === 'ँ') out += 'n';
+          else if (c === '्') {}
+          else if (cMap[c]) {
+            out += (c === 'व' && lang === 'hi-IN') ? 'v' : cMap[c];
+            if (n !== '्' && !mMap[n] && (i < chars.length - 1 || chars.length === 1)) out += 'a';
+          } else out += c;
         }
-        if (c === 'ज' && next === HALANT && chars[i + 2] === 'ञ') {
-          out += "gy"; i += 2; if (needsA(chars, i)) out += "a"; continue;
-        }
-        if (vowels[c]) out += vowels[c];
-        else if (matras[c]) out += matras[c];
-        else if (c === 'ं' || c === 'ँ') out += "n";
-        else if (c === 'ः') out += "h";
-        else if (c === HALANT) {}
-        else if (consonants[c]) {
-          out += (c === 'व' && mode === 'HINDI') ? 'v' : consonants[c];
-          if (needsA(chars, i)) out += "a";
-        } else out += c;
-      }
-      return out;
+        return out;
+      }).join(" ");
     }
 
-    function transliterateText(text, mode) {
-      if (mode !== "NEPALI" && mode !== "HINDI") return text;
-      const overrides = (mode === "NEPALI") ? nepaliOverrides : hindiOverrides;
-      return text.split(/(\s+)/).map(token => {
-        if (!/[\u0900-\u097F]/.test(token)) return token;
-        const m = token.match(/^([\u0900-\u097F]+)(.*)$/);
-        if (!m) return token;
-        return (overrides[m[1]] || transliterateWord(m[1], mode)) + (m[2] || "");
-      }).join("");
-    }
-
-    const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
-    const statusEl = document.getElementById("status");
-    const finalEl = document.getElementById("final-text");
-    const interimEl = document.getElementById("interim-text");
-    const captionBox = document.getElementById("caption-box");
-    const langSelect = document.getElementById("lang-select");
-    const listenBtn = document.getElementById("listen-btn");
-
-    let rec = null;
-    let isListening = false;
-    let fontSize = 26;
-
-    function startSession() {
+    function startMic() {
+      var SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (!SpeechRec) {
-        statusEl.textContent = "Error: Open this page in Google Chrome.";
+        document.getElementById("status").textContent = "ERROR: Open in Google Chrome.";
         return;
       }
       if (rec) { try { rec.abort(); } catch (e) {} }
 
+      var lang = document.getElementById("lang").value;
       rec = new SpeechRec();
-      rec.lang = langSelect.value;
+      rec.lang = lang;
       rec.continuous = false;
       rec.interimResults = true;
 
-      rec.onstart = () => {
-        statusEl.textContent = "Status: Listening (" + langSelect.options[langSelect.selectedIndex].text + ")...";
+      rec.onstart = function() {
+        document.getElementById("status").textContent = "Status: Listening (" + lang + ")...";
       };
 
-      rec.onresult = (e) => {
-        const mode = langSelect.options[langSelect.selectedIndex].dataset.mode;
-        let interim = "";
-        let newlyFinal = "";
-        for (let i = e.resultIndex; i < e.results.length; i++) {
-          const t = e.results[i][0].transcript;
-          if (e.results[i].isFinal) newlyFinal += transliterateText(t, mode) + " ";
-          else interim += transliterateText(t, mode);
+      rec.onresult = function(e) {
+        var fin = "", inter = "";
+        for (var i = e.resultIndex; i < e.results.length; i++) {
+          var t = toRoman(e.results[i][0].transcript, lang);
+          if (e.results[i].isFinal) fin += t + " ";
+          else inter += t;
         }
-        if (newlyFinal) finalEl.textContent += newlyFinal;
-        interimEl.textContent = interim;
-        captionBox.scroll
+        if (fin) document.getElementById("final").textContent += fin;
+        document.getElementById("interim").textContent = inter;
+        var box = document.getElementById("output");
+        box.scrollTop = box.scrollHeight;
+      };
+
+      rec.onerror = function(e) {
+        if (e.error === "not-allowed") {
+          document.getElementById("status").textContent = "ERROR: Mic permission denied";
+          stopMic();
+        }
+      };
+
+      rec.onend = function() {
+        var interEl = document.getElementById("interim");
+        if (interEl.textContent.trim()) {
+          document.getElementById("final").textContent += interEl.textContent.trim() + " ";
+          interEl.textContent = "";
+        }
+        if (listening) {
+          setTimeout(function() { if (listening) startMic(); }, 150);
+        }
+      };
+
+      try { rec.start(); } catch (err) {}
+    }
+
+    function toggleListen() {
+      var btn = document.getElementById("btn");
+      if (listening) {
+        stopMic();
+      } else {
+        listening = true;
+        btn.textContent = "Stop Listening";
+        btn.style.background = "#e53935";
+        startMic();
+      }
+    }
+
+    function stopMic() {
+      listening = false;
+      var btn = document.getElementById("btn");
+      btn.textContent = "Start Listening";
+      btn.style.background = "#1e88e5";
+      document.getElementById("status").textContent = "Status: Stopped";
+      if (rec) { try { rec.stop(); } catch (e) {} }
+    }
+
+    function restartIfActive() { if (listening) startMic(); }
+    function clearBox() {
+      document.getElementById("final").textContent = "";
+      document.getElementById("interim").textContent = "";
+    }
+  </script>
+</body>
+</html>
